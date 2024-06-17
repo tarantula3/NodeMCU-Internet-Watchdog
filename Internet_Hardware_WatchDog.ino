@@ -3,8 +3,8 @@
 #include <ESP8266Ping.h>             // https://github.com/dancol90/ESP8266Ping/
 
 
-const char* WIFI_SSID   = "SSID";        // Your SSID
-const char* WIFI_PWD    = "PASS";        // Your WiFi Password
+const char* WIFI_SSID   = "XXXX";        // Your SSID
+const char* WIFI_PWD    = "XXXX";        // Your WiFi Password
 
 #define RELAY D0
 #define LED1  D1
@@ -12,10 +12,10 @@ const char* WIFI_PWD    = "PASS";        // Your WiFi Password
 #define LED3  D3
 #define LED4  D5
 #define LED5  D7
-int random_n    = 1;    
-int ctr_main    = 1;
-int fail_count  = 0;  // Increments if ping fails
-int reset_timer = 90; 
+int random_n       = 1;  
+int fail_count     = 0;  // Increments if ping fails
+int reset_timer    = 20; // Modem should be turned off for "reset_timer" seconds
+int cooldown_timer = 80; // Device will wait for this time and will do the ping test before a second reboot
 
 
 void setup() {
@@ -31,7 +31,7 @@ void setup() {
   pinMode(LED5, OUTPUT);
 
   /** We start by connecting to a WiFi network **/  
-  IPAddress local_IP(192, 168, 0, 5);     // Static IP Address for ESP8266
+  IPAddress local_IP(192, 168, 0, 5);       // Static IP Address for ESP8266
   IPAddress subnet(255, 255, 255, 0);       // Subnet Mask
   IPAddress gateway(192, 168, 0, 1);        // Default Gateway
 
@@ -42,10 +42,20 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PWD);
   Serial.println(); Serial.println("Connecting to WiFi");
-  digitalWrite(LED2, HIGH); digitalWrite(LED4, HIGH); // Turn on all the red LEDs (first boot)
+  int ctr=0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    switch(ctr){  // Run the LED Chaser while the ESP is trying to connect to the Internet on first boot
+      case 0:digitalWrite(LED1, HIGH);digitalWrite(LED2, LOW);digitalWrite(LED3, LOW);digitalWrite(LED4, LOW);digitalWrite(LED5, LOW); ctr++; break;
+      case 1:digitalWrite(LED1, LOW);digitalWrite(LED2, HIGH);digitalWrite(LED3, LOW);digitalWrite(LED4, LOW);digitalWrite(LED5, LOW); ctr++; break;
+      case 2:digitalWrite(LED1, LOW);digitalWrite(LED2, LOW);digitalWrite(LED3, HIGH);digitalWrite(LED4, LOW);digitalWrite(LED5, LOW); ctr++; break;
+      case 3:digitalWrite(LED1, LOW);digitalWrite(LED2, LOW);digitalWrite(LED3, LOW);digitalWrite(LED4, HIGH);digitalWrite(LED5, LOW); ctr++; break;
+      case 4:digitalWrite(LED1, LOW);digitalWrite(LED2, LOW);digitalWrite(LED3, LOW);digitalWrite(LED4, LOW);digitalWrite(LED5, HIGH); ctr++; break;
+      case 5:digitalWrite(LED1, LOW);digitalWrite(LED2, LOW);digitalWrite(LED3, LOW);digitalWrite(LED4, HIGH);digitalWrite(LED5, LOW); ctr++; break;
+      case 6:digitalWrite(LED1, LOW);digitalWrite(LED2, LOW);digitalWrite(LED3, HIGH);digitalWrite(LED4, LOW);digitalWrite(LED5, LOW); ctr++; break;
+      case 7:digitalWrite(LED1, LOW);digitalWrite(LED2, HIGH);digitalWrite(LED3, LOW);digitalWrite(LED4, LOW);digitalWrite(LED5, LOW); ctr=0; break;
+    };
   };
   Serial.println("\nWiFi connected");
   Serial.print("IP address: "); Serial.println(WiFi.localIP());
@@ -54,7 +64,7 @@ void setup() {
 
 void loop() {
   /** Successful Pings **/
-  if ( pingTest() && (fail_count < 5) ) {             // If a successful ping is received
+  if ( pingTest() ) {                                 // If a successful ping is received
     fail_count = 0;                                   // Reset the fail count
     digitalWrite(LED2, LOW); digitalWrite(LED4, LOW); // Turn off all red LEDs
     random_n = random(1, 4);                          // Generate a random number
@@ -64,16 +74,22 @@ void loop() {
       case 3: pattern_blue3(); break;
     };
   } else {
-    if ( fail_count < 5 ){
-      fail_count++;                                   // If ping test fails - increment the fail_count
-      Serial.print("Fail Count: ");Serial.println(fail_count);
-      pattern_red();                                  // Flash the RED LED
-    };
+    fail_count++;                                   // If ping test fails -> increment the fail_count
+    Serial.print("Fail Count: "); Serial.println(fail_count);
+    pattern_red();                                  // Flash the RED LED
 
     /** Ping Completely Failed **/
-    if ( fail_count >= 5 ) {                          // Reset the router when more than 5 continus pings fail 
-      if ( ctr_main <= reset_timer ) { digitalWrite(RELAY, HIGH); Serial.println("Disconnected.."); pattern_red(); ctr_main++;    }; // Disconnect the circuit for few seconds
-      if ( ctr_main >  reset_timer ) { digitalWrite(RELAY, LOW);  Serial.println("Reconnected..."); ctr_main = 1; fail_count = 0; }; // Reconnect after the time is passed
+    if ( fail_count == 10 ) {                       // Disconnect the circuit for few seconds
+      digitalWrite(RELAY, HIGH); Serial.println("Disconnected..");
+    }; 
+
+    if ( fail_count == reset_timer ) {              // Reconnect after the time is passed
+      digitalWrite(RELAY, LOW);  Serial.println("Reconnected..."); 
+    };
+
+    if ( fail_count == cooldown_timer ) {           // Wait for the cool down timer to reset 
+      digitalWrite(RELAY, LOW);  Serial.println("Waiting For Reconnection..."); 
+      fail_count = 9;                               // Reset the fail_count to 9 for another reboot
     };
   };
 };
